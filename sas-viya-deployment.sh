@@ -1,7 +1,24 @@
-#!/bin/bash
+#!/usr/bin/env bash
+#
+# ----------------------------How to use?--------------------------------------
 # Run me with superuser privileges
+#
+# $ sudo chmod 775 pre_install_sas_viya.sh
+# $ sudo ./pre_install_sas_viya.sh
+# ------------------------------Info-------------------------------------------
+#
+# Version:              1.0.0
+# Site project:         https://github.com/jose-amat/Pre-Install-SAS-Viya
+# Author:               Jose Amat
+# E-mail:               jose.amat@sas.com
+#
+# --------------------------------Description----------------------------------
+#
+# pre_install_sas_viya.sh: Does the pre configuration for SAS Viya installation
+# Run and tested on CentOS 7
 
 INSTALL_DIRECTORY="/sas/install"
+VIYA_ARK_DIRECTORY="$INSTALL_DIRECTORY/viya-ark"
 SAS_DIRECTORY="/home/sas"
 CAS_DIRECTORY="/home/cas"
 ANSIBLE_VERSION="2.8.10"
@@ -9,7 +26,6 @@ RED='\e[1;91m'
 GREEN='\e[1;92m'
 YELLOW='\e[1;93m'
 NO_COLOR='\e[0m'
-
 YUM_PACKAGES=(
     systemd
     git
@@ -37,6 +53,15 @@ YUM_PACKAGES=(
 )
 
 
+if sestatus | grep 'permissive' -iq; then
+    echo -e "${GREEN}[INFO] - SELinux status is permissive.${NO_COLOR}"
+else
+    echo -e "${YELLOW}[WARN] - SELinux status is enforced. ${NO_COLOR}"
+    echo -e "${GREEN}[INFO] - Changing SELinux status...${NO_COLOR}"
+    sudo setenforce 0
+    sudo sed -i.bak -e 's/SELINUX=enforcing/SELINUX=permissive/g' /etc/selinux/config
+fi
+
 if ! ping -q -c 1 8.8.8.8 &> /dev/null; then
     echo -e "${RED}[ERROR] - Your computer has no internet connection.${NO_COLOR}"
     exit 1
@@ -46,8 +71,8 @@ fi
 
 
 if [ ! -d "$INSTALL_DIRECTORY" ]; then
-    echo -e "${YELLOW}[WARN] - The playbook destination was not created.${NO_COLOR} ..."
-    echo -e "${GREEN}[INFO] - Creating playbook destination: ${INSTALL_DIRECTORY}${NO_COLOR} ..."
+    echo -e "${YELLOW}[WARN] - The playbook destination was not created.${NO_COLOR}"
+    echo -e "${GREEN}[INFO] - Creating playbook destination: ${INSTALL_DIRECTORY} ...${NO_COLOR}"
     sudo mkdir -p "$INSTALL_DIRECTORY"
 else
     echo -e "${GREEN}[INFO] - Playbook destination is already created: ${INSTALL_DIRECTORY}${NO_COLOR}"
@@ -134,36 +159,72 @@ sas_as_sudoer () {
     fi
 }
 
-sas_as_installer () {
-    sas_folder="$(stat -c %U /sas)"
-    install_folder="$(stat -c %U /sas/install)"
-    if [[ ! "$sas_folder" = "sas" ]]; then
-        sudo chown sas:sas /sas
-    fi
-    
-    if [[ "$install_folder" = "sas" ]]; then
-        echo -e "${GREEN}[INFO] - sas is owner of ${INSTALL_DIRECTORY}${NO_COLOR}"
-    else
-        echo -e "${YELLOW}[WARN] - User sas is not owner of ${INSTALL_DIRECTORY}${NO_COLOR}"
-        echo -e "${GREEN}[INFO] - Changing the owner of ${INSTALL_DIRECTORY} to sas${NO_COLOR}"
-        sudo chown sas:sas /sas/install
-    fi
-}
-
 install_ansible () {
-    if pip freeze &> /dev/null| grep ansible; then
-        if ! pip freeze &> /dev/null | grep 'ansible==2.8.10'; then
-            echo -e "${GREEN}[INFO] - Installing ansible 2.8.10${NO_COLOR}..."
+    if pip freeze | grep ansible -q; then
+        if ! pip freeze | grep 'ansible==${ANSIBLE_VERSION}' -q; then
+            echo -e "${GREEN}[INFO] - Installing ansible ${ANSIBLE_VERSION}${NO_COLOR}..."
             sudo pip uninstall ansible --yes &> /dev/null
             yes | sudo pip install ansible==${ANSIBLE_VERSION} &> /dev/null
         fi
     else
         echo -e "${YELLOW}[WARN] - Ansible is not installed on this machine."
-        echo -e "${GREEN}[INFO] - Installing ansible 2.8.10${NO_COLOR}..."
+        echo -e "${GREEN}[INFO] - Installing ansible ${ANSIBLE_VERSION}${NO_COLOR}..."
         yes | sudo pip install ansible==${ANSIBLE_VERSION} &> /dev/null
         
     fi
 }
+
+download_viya_ark () {
+    if [[ ! -d "$VIYA_ARK_DIRECTORY" ]]; then
+        echo -e "${GREEN}[INFO] - Downloading Viya Ark...${NO_COLOR}"
+        cd /sas/install
+        git clone https://github.com/sassoftware/viya-ark.git &> /dev/null
+    else
+        echo -e "${GREEN}[INFO] - Viya Ark has already been downloaded.${NO_COLOR}"
+    fi
+}
+
+download_mirrormgr () {
+    if [[ ! -f "$INSTALL_DIRECTORY/mirrormgr-linux.tgz" ]]; then
+        echo -e "${GREEN}[INFO] - Downloading SAS Mirror Manager...${NO_COLOR}"
+        cd /sas/install
+        sudo wget https://support.sas.com/installation/viya/35/sas-mirror-manager/lax/mirrormgr-linux.tgz &> /dev/null
+    else
+        echo -e "${GREEN}[INFO] - SAS Mirror Manager has already been downloaded.${NO_COLOR}"
+    fi
+}
+
+download_sas_orchestration () {
+    if [[ ! -f "$INSTALL_DIRECTORY/sas-orchestration-linux.tgz" ]]; then
+        echo -e "${GREEN}[INFO] - Downloading SAS Orchestration CLI...${NO_COLOR}"
+        cd /sas/install
+        sudo wget https://support.sas.com/installation/viya/35/sas-orchestration-cli/lax/sas-orchestration-linux.tgz &> /dev/null
+    else
+        echo -e "${GREEN}[INFO] - SAS Orchestration CLI has already been downloaded.${NO_COLOR}"
+    fi
+}
+
+extract_tgz_file () {
+    if ls "$INSTALL_DIRECTORY"/*.tgz &> /dev/null; then
+        echo -e "${GREEN}[INFO] - Extracting tgz files...${NO_COLOR}"
+        cd /sas/install
+        for f in *.tgz; do tar xf "$f" &> /dev/null; done
+    else
+        echo -e "${RED}[ERROR] - There are no tgz files.${NO_COLOR}"
+    fi
+}
+
+sas_as_installer () {
+    sas_folder="$(stat -c %U /sas)"
+    if [[ ! "$sas_folder" = "sas" ]]; then
+        echo -e "${YELLOW}[WARN] - User sas is not owner of ${INSTALL_DIRECTORY}${NO_COLOR}"
+        echo -e "${GREEN}[INFO] - Changing the owner of ${INSTALL_DIRECTORY} to sas${NO_COLOR}"
+        sudo chown sas:sas /sas -R
+    else
+        echo -e "${GREEN}[INFO] - sas is owner of ${INSTALL_DIRECTORY}${NO_COLOR}"
+    fi
+}
+
 
 # Executing
 update_repositories
@@ -174,6 +235,9 @@ create_sas_user
 create_cas_user
 add_cas_user_to_sas_group
 sas_as_sudoer
-sas_as_installer
 install_ansible
-
+download_viya_ark
+download_mirrormgr
+download_sas_orchestration
+extract_tgz_file
+sas_as_installer

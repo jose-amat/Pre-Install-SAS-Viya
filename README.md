@@ -14,13 +14,14 @@ Script de reaproveitamento de comandos linux para facilitar a instalação do SA
 - [X] Colocar o usuário sas como super usuário
 - [X] Criar caminho de instalação '/sas/install'
 - [X] Instalação do ansible
+- [X] Baixar SAS Mirror Manager
+- [X] Baixar SAS Orchestration CLI
+- [X] Baixar Viya ARK
+
 
 ## Features futuras
 
-- [ ] Baixar SAS Mirror Manager
-- [ ] Baixar SAS Orchestration CLI
 - [ ] Criar playbook
-- [ ] Baixar Viya ARK
 - [ ] outras...
 
 ![](media/screenshot.png)
